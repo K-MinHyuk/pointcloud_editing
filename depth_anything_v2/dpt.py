@@ -110,8 +110,7 @@ class DPTHead(nn.Module):
             nn.Conv2d(head_features_1 // 2, head_features_2, kernel_size=3, stride=1, padding=1),
             nn.ReLU(True),
             nn.Conv2d(head_features_2, 1, kernel_size=1, stride=1, padding=0),
-            nn.ReLU(True),
-            nn.Identity(),
+            nn.Sigmoid()
         )
     
     def forward(self, out_features, patch_h, patch_w):
@@ -157,7 +156,8 @@ class DepthAnythingV2(nn.Module):
         features=256, 
         out_channels=[256, 512, 1024, 1024], 
         use_bn=False, 
-        use_clstoken=False
+        use_clstoken=False,
+        max_depth=20.0
     ):
         super(DepthAnythingV2, self).__init__()
         
@@ -167,6 +167,8 @@ class DepthAnythingV2(nn.Module):
             'vitl': [4, 11, 17, 23], 
             'vitg': [9, 19, 29, 39]
         }
+        
+        self.max_depth = max_depth
         
         self.encoder = encoder
         self.pretrained = DINOv2(model_name=encoder)
@@ -178,8 +180,7 @@ class DepthAnythingV2(nn.Module):
         
         features = self.pretrained.get_intermediate_layers(x, self.intermediate_layer_idx[self.encoder], return_class_token=True)
         
-        depth = self.depth_head(features, patch_h, patch_w)
-        depth = F.relu(depth)
+        depth = self.depth_head(features, patch_h, patch_w) * self.max_depth
         
         return depth.squeeze(1)
     
@@ -193,11 +194,11 @@ class DepthAnythingV2(nn.Module):
         
         return depth.cpu().numpy()
     
-    def image2tensor(self, raw_image, input_size=518):        
+    def image2tensor(self, raw_image, input_size):        
         transform = Compose([
             Resize(
-                width=input_size,
-                height=input_size,
+                width=input_size[0],
+                height=input_size[1],
                 resize_target=False,
                 keep_aspect_ratio=True,
                 ensure_multiple_of=14,
